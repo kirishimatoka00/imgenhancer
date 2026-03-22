@@ -1,45 +1,4 @@
 <!DOCTYPE html>
-<html>
-<body>
-    <h2>NOVA 檔案下載器</h2>
-    <p>請點擊下方按鈕下載這兩個檔案，並放進你的 GitHub 資料夾：</p>
-    
-    <button onclick="downloadFile('https://cdn.jsdelivr.net/npm/@upscalerjs/real-esrgan@0.10.0/models/realesrgan-t/model.json', 'model.json')">
-        1. 下載 model.json
-    </button>
-    <br><br>
-    <button onclick="downloadFile('https://cdn.jsdelivr.net/npm/@upscalerjs/real-esrgan@0.10.0/models/realesrgan-t/group1-shard1of1.bin', 'group1-shard1of1.bin')">
-        2. 下載 group1-shard1of1.bin
-    </button>
-
-    <script>
-        function downloadFile(url, filename) {
-            fetch(url).then(res => res.blob()).then(blob => {
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = filename;
-                a.click();
-            }).catch(err => alert('下載失敗，請檢查網路連線'));
-        }
-    </script>
-</body>
-</html>
-📂 下載完成後，你的 GitHub 資料夾應該有這 5 個檔案：
-imgenhancer.html (主程式)
-
-tf.min.js (你已經有了)
-
-upscaler.min.js (你已經有了)
-
-model.json (剛剛下載的)
-
-group1-shard1of1.bin (剛剛下載的)
-
-🚀 最後的完整版 HTML (全本地對接)
-一旦你把上面 5 個檔案都放進 GitHub，請使用這份 「完全離線版」 代碼。它不會再去連任何外部網址，絕對不會再報 404！
-
-HTML
-<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
