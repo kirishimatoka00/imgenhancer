@@ -101,17 +101,34 @@
                     let dst = new cv.Mat();
 
                     if (mode === '2x') {
-                        // 【架構大逆轉】先在原圖做耗效能的雙邊降噪，再放大！
+                        // 【2X 模式】先在原圖做耗效能的雙邊降噪，再放大！
                         let enhancedSrc = new cv.Mat();
+                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
+
+                        // 乾淨的圖處理好後，正式放大 2 倍
+                        cv.resize(enhancedSrc, dst, new cv.Size(src.cols * 2, src.rows * 2), 0, 0, cv.INTER_CUBIC);
+                        enhancedSrc.delete();
+
+                        // 放大後，使用極低記憶體消耗的 GaussianBlur 進行 USM 邊緣銳化
+                        let blurred = new cv.Mat();
+                        cv.GaussianBlur(dst, blurred, new cv.Size(0, 0), 3);
+                        cv.addWeighted(dst, 1.5, blurred, -0.5, 0, dst);
+                        blurred.delete();
+
+                    } else if (mode === '100mp') {
+                        // 【100MP 模式】先在原圖做降噪
+                        let enhancedSrc = new cv.Mat();
+                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
+
                         // === 【新增】CLAHE 紋理細節增強技術 ===
                         let lab = new cv.Mat();
-                        // 將圖片轉入 LAB 色彩空間 (因為我們只想強化亮度細節，不破壞顏色)
+                        // 將圖片轉入 LAB 色彩空間 (只強化亮度細節)
                         cv.cvtColor(enhancedSrc, lab, cv.COLOR_RGB2LAB);
                         let labPlanes = new cv.MatVector();
                         cv.split(lab, labPlanes);
                         let lChannel = labPlanes.get(0);
                         
-                        // 建立 CLAHE 演算法 (Clip Limit 2.0 代表對比強化程度)
+                        // 建立 CLAHE 演算法
                         let clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
                         clahe.apply(lChannel, lChannel);
                         
@@ -122,8 +139,8 @@
                         
                         lab.delete(); labPlanes.delete(); lChannel.delete(); clahe.delete();
                         // ===================================
-                        
-                        // 在原圖尺寸提升飽和度
+
+                        // === 在原圖尺寸提升飽和度 ===
                         let hsv = new cv.Mat();
                         cv.cvtColor(enhancedSrc, hsv, cv.COLOR_RGB2HSV);
                         let channels = new cv.MatVector();
@@ -135,6 +152,7 @@
                         cv.cvtColor(hsv, enhancedSrc, cv.COLOR_HSV2RGB);
                         
                         hsv.delete(); channels.delete(); s.delete();
+                        // ===================================
 
                         // 計算安全放大上限 (手機 16MP, 電腦 36MP)
                         let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
@@ -143,7 +161,7 @@
                         if (targetPixels > maxPixels) targetPixels = maxPixels;
 
                         let ratio = Math.sqrt(targetPixels / (src.cols * src.rows));
-                        if (ratio > 3) ratio = 3; // 保護機制：限制單邊最大放大 3 倍 (面積 9 倍)
+                        if (ratio > 3) ratio = 3; // 保護機制：限制單邊最大放大 3 倍
                         if (ratio < 1) ratio = 1; 
 
                         let width = Math.round(src.cols * ratio);
