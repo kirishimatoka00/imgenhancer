@@ -103,22 +103,25 @@
                     if (mode === '2x') {
                         // 【架構大逆轉】先在原圖做耗效能的雙邊降噪，再放大！
                         let enhancedSrc = new cv.Mat();
-                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50); // 記憶體消耗降至 1/4
-
-                        // 乾淨的圖處理好後，正式放大 2 倍
-                        cv.resize(enhancedSrc, dst, new cv.Size(src.cols * 2, src.rows * 2), 0, 0, cv.INTER_CUBIC);
-                        enhancedSrc.delete();
-
-                        // 放大後，使用極低記憶體消耗的 GaussianBlur 進行 USM 邊緣銳化
-                        let blurred = new cv.Mat();
-                        cv.GaussianBlur(dst, blurred, new cv.Size(0, 0), 3);
-                        cv.addWeighted(dst, 1.5, blurred, -0.5, 0, dst);
-                        blurred.delete();
-
-                    } else if (mode === '100mp') {
-                        // 【架構大逆轉】先在原圖做降噪與色彩強化，避開破 GB 的記憶體吃載
-                        let enhancedSrc = new cv.Mat();
-                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
+                        // === 【新增】CLAHE 紋理細節增強技術 ===
+                        let lab = new cv.Mat();
+                        // 將圖片轉入 LAB 色彩空間 (因為我們只想強化亮度細節，不破壞顏色)
+                        cv.cvtColor(enhancedSrc, lab, cv.COLOR_RGB2LAB);
+                        let labPlanes = new cv.MatVector();
+                        cv.split(lab, labPlanes);
+                        let lChannel = labPlanes.get(0);
+                        
+                        // 建立 CLAHE 演算法 (Clip Limit 2.0 代表對比強化程度)
+                        let clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+                        clahe.apply(lChannel, lChannel);
+                        
+                        // 合併回原圖
+                        labPlanes.set(0, lChannel);
+                        cv.merge(labPlanes, lab);
+                        cv.cvtColor(lab, enhancedSrc, cv.COLOR_LAB2RGB);
+                        
+                        lab.delete(); labPlanes.delete(); lChannel.delete(); clahe.delete();
+                        // ===================================
                         
                         // 在原圖尺寸提升飽和度
                         let hsv = new cv.Mat();
