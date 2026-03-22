@@ -140,23 +140,15 @@
                         lab.delete(); labPlanes.delete(); lChannel.delete(); clahe.delete();
                         // ===================================
 
-                        // === 在原圖尺寸提升飽和度 ===
-                        let hsv = new cv.Mat();
-                        cv.cvtColor(enhancedSrc, hsv, cv.COLOR_RGB2HSV);
-                        let channels = new cv.MatVector();
-                        cv.split(hsv, channels);
-                        let s = channels.get(1);
-                        s.convertTo(s, -1, 1.2, 0); // 飽和度 +20%
-                        channels.set(1, s);
-                        cv.merge(channels, hsv);
-                        cv.cvtColor(hsv, enhancedSrc, cv.COLOR_HSV2RGB);
-                        
-                        hsv.delete(); channels.delete(); s.delete();
-                        // ===================================
+                        // 【關鍵修復】把 USM 邊緣銳化也移到放大「前」做！徹底消除記憶體炸彈！
+                        let blurred = new cv.Mat();
+                        cv.GaussianBlur(enhancedSrc, blurred, new cv.Size(0, 0), 3);
+                        cv.addWeighted(enhancedSrc, 1.6, blurred, -0.6, 0, enhancedSrc);
+                        blurred.delete();
 
-                        // 計算安全放大上限 (手機 16MP, 電腦 36MP)
+                        // 計算安全放大上限 (稍微調降以確保任何瀏覽器都絕對安全：手機 12MP, 電腦 24MP)
                         let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
-                        let maxPixels = isMobile ? 16000000 : 36000000; 
+                        let maxPixels = isMobile ? 12000000 : 24000000; 
                         let targetPixels = 100000000; // 目標 1 億畫素
                         if (targetPixels > maxPixels) targetPixels = maxPixels;
 
@@ -168,14 +160,9 @@
                         let height = Math.round(src.rows * ratio);
                         
                         // 正式將處理好的乾淨圖片放大到超高畫素
-                        cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
+                        // 改用 INTER_LANCZOS4 演算法，它在放大時能保留最多銳利度，完美補償銳化提前的損耗
+                        cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_LANCZOS4);
                         enhancedSrc.delete(); 
-
-                        // 針對超大圖進行低負擔的 USM 銳化，找回細節
-                        let blurred = new cv.Mat();
-                        cv.GaussianBlur(dst, blurred, new cv.Size(0, 0), 3);
-                        cv.addWeighted(dst, 1.6, blurred, -0.6, 0, dst);
-                        blurred.delete();
                     }
 
                     // 輸出到 Canvas 顯示
