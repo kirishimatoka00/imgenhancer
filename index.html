@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOVA - 2x 高清影像增強</title>
     
-    <script id="tf-lib" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
-    <script id="upscaler-lib" src="https://cdn.jsdelivr.net/npm/upscaler@0.0.56/dist/browser/umd/upscaler.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/upscaler@0.0.56/dist/browser/umd/upscaler.min.js"></script>
 
     <style>
         :root { --nova: #007AFF; --success: #34C759; --bg: #f2f2f7; }
         body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; margin: 0; }
         .card { width: 100%; max-width: 800px; background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
-        .status-box { padding: 12px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; transition: 0.3s; }
+        .status-box { padding: 12px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; }
         .upload-area { border: 2px dashed var(--nova); padding: 40px; text-align: center; border-radius: 18px; cursor: pointer; background: #f8fbff; margin-bottom: 20px; }
         .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         .btn:disabled { background: #d1d1d6; cursor: not-allowed; }
@@ -27,7 +27,7 @@
 <body>
 
 <div class="card">
-    <div id="status" class="status-box">🛰️ 正在啟動 NOVA 衛星通訊...</div>
+    <div id="status" class="status-box">🛰️ 正在連結 NOVA AI 衛星...</div>
     <h2 style="margin:0 0 10px 0;">NOVA <span style="font-weight:300;">Super-Resolution</span></h2>
     <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 像素重繪：強制 100 萬 → 400 萬畫素</p>
 
@@ -36,7 +36,7 @@
         <p id="file-msg" style="margin:0; font-size:16px;">點擊選取圖片 或 拖放至此</p>
     </div>
 
-    <button id="run-btn" class="btn" onclick="startUpscale()" disabled>等待 AI 組件載入...</button>
+    <button id="run-btn" class="btn" onclick="startUpscale()" disabled>等待組件初始化...</button>
 
     <div class="progress-bar-bg" id="p-bg">
         <div class="progress-bar-fill" id="p-fill"></div>
@@ -57,54 +57,30 @@
 
     <div id="dl-box" style="margin-top: 25px; text-align: center; display: none;">
         <a id="dl-link" download="NOVA_Enhanced_4MP.png">
-            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 下載 4MP 高清圖</button>
+            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 下載 400 萬畫素圖片</button>
         </a>
     </div>
 </div>
 
 <script>
     let upscaler;
-    let isRetrying = false;
-    const startTime = Date.now();
     const status = document.getElementById('status');
     const runBtn = document.getElementById('run-btn');
     const fileInput = document.getElementById('file-input');
     const imgIn = document.getElementById('img-in');
     const imgOut = document.getElementById('img-out');
 
-    // 1. 自動監測與備援啟動邏輯
-    function bootSystem() {
-        const timeElapsed = Date.now() - startTime;
-
-        if (typeof Upscaler !== 'undefined' && typeof tf !== 'undefined') {
-            console.log("✅ AI 函式庫已就緒");
-            initAIModel();
-        } else {
-            // 如果超過 5 秒還沒載入，自動切換到備援 CDN (unpkg)
-            if (!isRetrying && timeElapsed > 5000) {
-                console.warn("⚠️ 主要伺服器延遲，正在切換備援衛星...");
-                status.innerText = "🔄 正在嘗試備援連線...";
-                
-                const s1 = document.createElement('script');
-                s1.src = "https://unpkg.com/@tensorflow/tfjs@4.17.0/dist/tf.min.js";
-                document.head.appendChild(s1);
-                
-                const s2 = document.createElement('script');
-                s2.src = "https://unpkg.com/upscaler@0.0.56/dist/browser/umd/upscaler.min.js";
-                document.head.appendChild(s2);
-                
-                isRetrying = true;
-            }
-            status.innerText = `⏳ 正在載入 AI 組件 (${Math.round(timeElapsed/1000)}s)...`;
-            setTimeout(bootSystem, 500);
-        }
-    }
-
-    async function initAIModel() {
+    // 1. 強制初始化邏輯
+    async function initEngine() {
         try {
-            status.innerText = "⏳ 正在同步 AI 權重模型 (20MB)...";
+            // 抑制 TensorFlow 的重複註冊警告
+            if (typeof tf !== 'undefined') {
+                tf.env().set('DEBUG', false);
+            }
+
+            status.innerText = "⏳ 偵測到組件，正在載入 AI 權重 (20MB)...";
             
-            // 使用強制路徑載入，避免 npm 套件查詢錯誤
+            // 直接定義模型路徑，解決路徑識別問題
             upscaler = new Upscaler({
                 model: {
                     path: 'https://unpkg.com/@upscalerjs/real-esrgan@0.0.10/models/realesrgan-t/model.json',
@@ -112,22 +88,35 @@
                 }
             });
 
+            // 預熱
             await upscaler.warmup({ patchSize: 128 });
             
-            status.innerText = "✅ NOVA 高清引擎已就緒";
+            status.innerText = "✅ NOVA 引擎已就緒";
             status.style.background = "#E8F5E9";
             status.style.color = "#2E7D32";
-            runBtn.innerText = "執行 200% 像素重繪";
+            runBtn.innerText = "執行 2x 像素重繪";
             if(imgIn.src) runBtn.disabled = false;
+
         } catch (e) {
-            status.innerText = "❌ 模型載入失敗，請確認網路連線";
-            console.error(e);
+            status.innerText = "❌ 啟動失敗：模型下載被阻斷";
+            console.error("Initialization Error:", e);
         }
     }
 
-    bootSystem();
+    // 2. 監測啟動：只要 tf 出現就直接衝
+    let checkCount = 0;
+    const interval = setInterval(() => {
+        checkCount++;
+        if (typeof tf !== 'undefined' && typeof Upscaler !== 'undefined') {
+            clearInterval(interval);
+            initEngine();
+        } else if (checkCount > 20) { // 10秒後還是沒動靜就嘗試換源
+            clearInterval(interval);
+            status.innerText = "⚠ 載入超時，請檢查網路連線";
+        }
+    }, 500);
 
-    // 2. 檔案處理邏輯
+    // 3. 檔案處理
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -136,29 +125,26 @@
             imgIn.src = ev.target.result;
             imgIn.onload = () => {
                 document.getElementById('px-in').innerText = `${imgIn.naturalWidth} x ${imgIn.naturalHeight}`;
-                document.getElementById('file-msg').innerText = `已選取：${file.name}`;
                 if(status.innerText.includes("就緒")) runBtn.disabled = false;
             };
         };
         reader.readAsDataURL(file);
-        imgOut.src = "";
-        document.getElementById('dl-box').style.display = 'none';
     };
 
-    // 3. AI 運算邏輯
+    // 4. 執行放大
     async function startUpscale() {
         runBtn.disabled = true;
         const pBg = document.getElementById('p-bg');
         const pFill = document.getElementById('p-fill');
         pBg.style.display = 'block';
-        status.innerText = "⚡ 正在本地進行 AI 運算，請勿離開...";
+        status.innerText = "⚡ 正在進行本地 AI 運算...";
 
         try {
             const result = await upscaler.upscale(imgIn, {
                 patchSize: 128,
                 padding: 4,
-                progress: (percent) => {
-                    pFill.style.width = Math.round(percent * 100) + '%';
+                progress: (p) => {
+                    pFill.style.width = Math.round(p * 100) + '%';
                 }
             });
 
@@ -171,8 +157,7 @@
                 runBtn.disabled = false;
             };
         } catch (err) {
-            console.error(err);
-            status.innerText = "❌ 運算出錯：可能圖片過大超過顯存限制";
+            status.innerText = "❌ 運算失敗：圖片過大";
             runBtn.disabled = false;
         }
     }
