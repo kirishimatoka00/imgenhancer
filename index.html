@@ -2,115 +2,54 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA - 影像高清增強 (本地執行版)</title>
-    <link rel="icon" href="data:,">
-    
+    <title>NOVA - 100% 本地高清增強</title>
     <script src="./tf.min.js"></script>
     <script src="./upscaler.min.js"></script>
-
-    <style>
-        :root { --nova: #007AFF; --bg: #f2f2f7; }
-        body { font-family: -apple-system, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; }
-        .card { width: 100%; max-width: 800px; background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
-        .status-box { padding: 15px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; line-height: 1.5; }
-        .upload-area { border: 2px dashed var(--nova); padding: 30px; text-align: center; border-radius: 18px; cursor: pointer; background: #f8fbff; margin-bottom: 20px; }
-        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; }
-        .btn:disabled { background: #d1d1d6; cursor: not-allowed; }
-        img { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; margin-top: 10px; }
-        .error-tip { color: #ff3b30; font-size: 12px; margin-top: 10px; display: none; text-align: left; border-top: 1px solid #eee; padding-top: 10px; }
-    </style>
 </head>
 <body>
-
-<div class="card">
-    <div id="status" class="status-box">🛰️ 正在讀取本地核心...</div>
-    <h2 style="margin:0;">NOVA <span style="font-weight:300;">Enhancer</span></h2>
-    
-    <div id="tip" class="error-tip">
-        <strong>💡 偵測到本地開啟：</strong><br>
-        如果標題卡在「等待中」，代表瀏覽器封鎖了本地讀取。請將檔案上傳到 GitHub Pages，或使用 VS Code 的 Live Server 開啟。
-    </div>
-
-    <div class="upload-area" onclick="document.getElementById('file-input').click()">
-        <input type="file" id="file-input" accept="image/*" style="display: none;">
-        <p id="file-msg">選取要增強的圖片</p>
-    </div>
-
-    <button id="run-btn" class="btn" onclick="startEnhance()" disabled>等待引擎就緒...</button>
-
-    <div style="display: flex; gap: 20px; margin-top: 25px; flex-wrap: wrap;">
-        <div style="flex: 1; text-align: center;"><p>原始</p><img id="img-in"></div>
-        <div style="flex: 1; text-align: center;"><p>結果</p><img id="img-out"></div>
-    </div>
-</div>
+    <div id="status" style="padding:10px; background:#eee;">🛰️ 正在讀取本地檔案...</div>
+    <input type="file" id="file-input">
+    <button id="run-btn" onclick="start()" disabled>執行 2x 增強</button>
+    <hr>
+    <img id="img-in" style="max-width:300px; display:none;">
+    <img id="img-out" style="max-width:100%;">
 
 <script>
     let upscaler;
     const status = document.getElementById('status');
     const runBtn = document.getElementById('run-btn');
 
-    // 檢查是否為本地開啟並顯示提示
-    if (window.location.protocol === 'file:') {
-        document.getElementById('tip').style.display = 'block';
-    }
-
     async function init() {
         try {
-            if (typeof tf === 'undefined' || typeof Upscaler === 'undefined') {
-                status.innerText = "❌ 找不到本地 JS 檔案\n請確認 tf.min.js 和 upscaler.min.js 在同一個資料夾。";
-                return;
-            }
-
-            // 使用目前最穩定的雲端模型路徑作為後盾
+            // 核心修正：強制指向本地，不再連網路
             upscaler = new Upscaler({
                 model: {
-                    path: 'https://cdn.jsdelivr.net/npm/@upscalerjs/real-esrgan@0.10.0/models/realesrgan-t/model.json',
+                    path: './model.json',
                     scale: 2
                 }
             });
-
-            status.innerText = "✅ NOVA 引擎已就緒";
+            status.innerText = "✅ NOVA 引擎已就緒 (離線模式)";
             status.style.background = "#E8F5E9";
-            status.style.color = "#2E7D32";
-            runBtn.innerText = "執行 1.5x 高清增強";
-            if(document.getElementById('img-in').src) runBtn.disabled = false;
         } catch (e) {
-            status.innerText = "❌ 模型加載失敗\n可能是網路被封鎖或 CORS 限制。";
-            console.error(e);
+            status.innerText = "❌ 讀取失敗，請確認 5 個檔案都在同資料夾";
         }
     }
-
     window.onload = init;
 
     document.getElementById('file-input').onchange = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
             document.getElementById('img-in').src = ev.target.result;
-            if(status.innerText.includes("就緒")) runBtn.disabled = false;
+            runBtn.disabled = false;
         };
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(e.target.files[0]);
     };
 
-    async function startEnhance() {
-        runBtn.disabled = true;
-        status.innerText = "⚡ 正在進行 AI 像素重繪...";
-        try {
-            const img = document.getElementById('img-in');
-            const result = await upscaler.upscale(img, {
-                patchSize: 64,
-                outputWidth: img.naturalWidth * 1.5,
-                outputHeight: img.naturalHeight * 1.5
-            });
-            document.getElementById('img-out').src = result;
-            status.innerText = "✨ 增強完成！";
-            runBtn.disabled = false;
-        } catch (err) {
-            status.innerText = "❌ 運算失敗：顯存不足";
-            runBtn.disabled = false;
-        }
+    async function start() {
+        status.innerText = "⚡ 本地 AI 像素計算中...";
+        const result = await upscaler.upscale(document.getElementById('img-in'));
+        document.getElementById('img-out').src = result;
+        status.innerText = "✨ 增強完成！";
     }
 </script>
 </body>
