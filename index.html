@@ -116,51 +116,41 @@
                         blurred.delete();
 
                     } else if (mode === '100mp') {
-                        // 【100MP 模式】先在原圖做降噪
+                        // 【動態保護機制】
+                        let totalPixels = src.cols * src.rows;
                         let enhancedSrc = new cv.Mat();
-                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
-
-                        // === 【新增】CLAHE 紋理細節增強技術 ===
-                        let lab = new cv.Mat();
-                        // 將圖片轉入 LAB 色彩空間 (只強化亮度細節)
-                        cv.cvtColor(enhancedSrc, lab, cv.COLOR_RGB2LAB);
-                        let labPlanes = new cv.MatVector();
-                        cv.split(lab, labPlanes);
-                        let lChannel = labPlanes.get(0);
                         
-                        // 建立 CLAHE 演算法
-                        let clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-                        clahe.apply(lChannel, lChannel);
-                        
-                        // 合併回原圖
-                        labPlanes.set(0, lChannel);
-                        cv.merge(labPlanes, lab);
-                        cv.cvtColor(lab, enhancedSrc, cv.COLOR_LAB2RGB);
-                        
-                        lab.delete(); labPlanes.delete(); lChannel.delete(); clahe.delete();
-                        // ===================================
+                        if (totalPixels > 3000000) {
+                            // 如果原圖已經大於 300 萬畫素，直接跳過耗能的濾波器，以防記憶體崩潰
+                            src.copyTo(enhancedSrc);
+                        } else {
+                            // 只有小圖才進行降噪與 CLAHE
+                            cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
+                            let lab = new cv.Mat();
+                            cv.cvtColor(enhancedSrc, lab, cv.COLOR_RGB2LAB);
+                            let labPlanes = new cv.MatVector();
+                            cv.split(lab, labPlanes);
+                            let clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+                            clahe.apply(labPlanes.get(0), labPlanes.get(0));
+                            labPlanes.set(0, labPlanes.get(0));
+                            cv.merge(labPlanes, lab);
+                            cv.cvtColor(lab, enhancedSrc, cv.COLOR_LAB2RGB);
+                            lab.delete(); labPlanes.delete(); clahe.delete();
+                        }
 
-                        // 【關鍵修復】把 USM 邊緣銳化也移到放大「前」做！徹底消除記憶體炸彈！
-                        let blurred = new cv.Mat();
-                        cv.GaussianBlur(enhancedSrc, blurred, new cv.Size(0, 0), 3);
-                        cv.addWeighted(enhancedSrc, 1.6, blurred, -0.6, 0, enhancedSrc);
-                        blurred.delete();
-
-                        // 計算安全放大上限 (稍微調降以確保任何瀏覽器都絕對安全：手機 12MP, 電腦 24MP)
+                        // 安全放大上限
                         let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
                         let maxPixels = isMobile ? 12000000 : 24000000; 
-                        let targetPixels = 100000000; // 目標 1 億畫素
+                        let targetPixels = 100000000; 
                         if (targetPixels > maxPixels) targetPixels = maxPixels;
 
                         let ratio = Math.sqrt(targetPixels / (src.cols * src.rows));
-                        if (ratio > 3) ratio = 3; // 保護機制：限制單邊最大放大 3 倍
+                        if (ratio > 3) ratio = 3; 
                         if (ratio < 1) ratio = 1; 
 
                         let width = Math.round(src.cols * ratio);
                         let height = Math.round(src.rows * ratio);
                         
-                        // 正式將處理好的乾淨圖片放大到超高畫素
-                        // 改用 INTER_LANCZOS4 演算法，它在放大時能保留最多銳利度，完美補償銳化提前的損耗
                         cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_LANCZOS4);
                         enhancedSrc.delete(); 
                     }
