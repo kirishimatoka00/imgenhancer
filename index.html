@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOVA - 2x 高清影像增強</title>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+    <link rel="icon" href="data:,"> <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/upscaler@0.0.56/dist/browser/umd/upscaler.min.js"></script>
 
     <style>
@@ -14,7 +13,7 @@
         .card { width: 100%; max-width: 800px; background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
         .status-box { padding: 12px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; }
         .upload-area { border: 2px dashed var(--nova); padding: 40px; text-align: center; border-radius: 18px; cursor: pointer; background: #f8fbff; margin-bottom: 20px; }
-        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; }
         .btn:disabled { background: #d1d1d6; cursor: not-allowed; }
         .progress-bar-bg { background: #e5e5ea; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 20px; display: none; }
         .progress-bar-fill { background: linear-gradient(90deg, #007AFF, #5856D6); width: 0%; height: 100%; }
@@ -27,16 +26,15 @@
 <body>
 
 <div class="card">
-    <div id="status" class="status-box">🛰️ 正在連結 NOVA AI 衛星...</div>
+    <div id="status" class="status-box">🛰️ 正在連線 NOVA AI 衛星...</div>
     <h2 style="margin:0 0 10px 0;">NOVA <span style="font-weight:300;">Super-Resolution</span></h2>
-    <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 像素重繪：強制 100 萬 → 400 萬畫素</p>
 
     <div class="upload-area" onclick="document.getElementById('file-input').click()">
         <input type="file" id="file-input" accept="image/*" style="display: none;">
         <p id="file-msg" style="margin:0; font-size:16px;">點擊選取圖片 或 拖放至此</p>
     </div>
 
-    <button id="run-btn" class="btn" onclick="startUpscale()" disabled>等待組件初始化...</button>
+    <button id="run-btn" class="btn" onclick="startUpscale()" disabled>等待模型下載中...</button>
 
     <div class="progress-bar-bg" id="p-bg">
         <div class="progress-bar-fill" id="p-fill"></div>
@@ -56,8 +54,8 @@
     </div>
 
     <div id="dl-box" style="margin-top: 25px; text-align: center; display: none;">
-        <a id="dl-link" download="NOVA_Enhanced_4MP.png">
-            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 下載 400 萬畫素圖片</button>
+        <a id="dl-link" download="NOVA_4MP.png">
+            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 保存圖片</button>
         </a>
     </div>
 </div>
@@ -70,17 +68,13 @@
     const imgIn = document.getElementById('img-in');
     const imgOut = document.getElementById('img-out');
 
-    // 1. 強制初始化邏輯
+    // 核心初始化
     async function initEngine() {
         try {
-            // 抑制 TensorFlow 的重複註冊警告
-            if (typeof tf !== 'undefined') {
-                tf.env().set('DEBUG', false);
-            }
-
-            status.innerText = "⏳ 偵測到組件，正在載入 AI 權重 (20MB)...";
+            if (typeof tf !== 'undefined') tf.env().set('DEBUG', false);
+            status.innerText = "⏳ 找到組件，正在請求 20MB 數據檔...";
             
-            // 直接定義模型路徑，解決路徑識別問題
+            // 使用備援路徑
             upscaler = new Upscaler({
                 model: {
                     path: 'https://unpkg.com/@upscalerjs/real-esrgan@0.0.10/models/realesrgan-t/model.json',
@@ -88,35 +82,33 @@
                 }
             });
 
-            // 預熱
-            await upscaler.warmup({ patchSize: 128 });
-            
+            // 跳過長時間的 warmup，直接讓按鈕變可用
             status.innerText = "✅ NOVA 引擎已就緒";
             status.style.background = "#E8F5E9";
-            status.style.color = "#2E7D32";
-            runBtn.innerText = "執行 2x 像素重繪";
             if(imgIn.src) runBtn.disabled = false;
+            runBtn.innerText = "執行 2x 像素重繪";
 
         } catch (e) {
-            status.innerText = "❌ 啟動失敗：模型下載被阻斷";
-            console.error("Initialization Error:", e);
+            status.innerText = "❌ 請求被攔截，請嘗試切換網路";
+            console.error(e);
         }
     }
 
-    // 2. 監測啟動：只要 tf 出現就直接衝
-    let checkCount = 0;
-    const interval = setInterval(() => {
-        checkCount++;
+    // 監測機制
+    let checkTimer = 0;
+    const monitor = setInterval(() => {
+        checkTimer++;
         if (typeof tf !== 'undefined' && typeof Upscaler !== 'undefined') {
-            clearInterval(interval);
+            clearInterval(monitor);
             initEngine();
-        } else if (checkCount > 20) { // 10秒後還是沒動靜就嘗試換源
-            clearInterval(interval);
-            status.innerText = "⚠ 載入超時，請檢查網路連線";
+        } else if (checkTimer > 60) { // 延長到 30 秒
+            clearInterval(monitor);
+            status.innerText = "⚠ 衛星連線超時，請檢查防火牆或換手機測試";
+        } else {
+            status.innerText = `📡 偵測組件中 (${Math.round(checkTimer/2)}s)...`;
         }
     }, 500);
 
-    // 3. 檔案處理
     fileInput.onchange = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -131,21 +123,17 @@
         reader.readAsDataURL(file);
     };
 
-    // 4. 執行放大
     async function startUpscale() {
         runBtn.disabled = true;
-        const pBg = document.getElementById('p-bg');
+        document.getElementById('p-bg').style.display = 'block';
         const pFill = document.getElementById('p-fill');
-        pBg.style.display = 'block';
-        status.innerText = "⚡ 正在進行本地 AI 運算...";
+        status.innerText = "⚡ 正在本地運算... 第一次運算可能較久";
 
         try {
             const result = await upscaler.upscale(imgIn, {
                 patchSize: 128,
                 padding: 4,
-                progress: (p) => {
-                    pFill.style.width = Math.round(p * 100) + '%';
-                }
+                progress: (p) => { pFill.style.width = Math.round(p * 100) + '%'; }
             });
 
             imgOut.src = result;
@@ -157,7 +145,7 @@
                 runBtn.disabled = false;
             };
         } catch (err) {
-            status.innerText = "❌ 運算失敗：圖片過大";
+            status.innerText = "❌ 顯存溢出，請換一張小一點的圖";
             runBtn.disabled = false;
         }
     }
