@@ -3,20 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NOVA 影像加強引擎 (OpenCV + Nano Banana)</title>
+    <title>NOVA 影像加強引擎 (OpenCV + Replicate AI)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <style>
         body { background-color: #0f172a; color: white; font-family: sans-serif; }
         .loader { border: 4px solid #334155; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        canvas, img { image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; }
     </style>
 </head>
 <body class="p-6 flex flex-col items-center min-h-screen">
 
     <div class="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
         <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
-            <h1 class="text-2xl font-bold flex items-center gap-2"><i class="ph-bold ph-image-square text-blue-500"></i> NOVA 影像加強引擎</h1>
+            <h1 class="text-2xl font-bold flex items-center gap-2">
+                <i class="ph-bold ph-magic-wand text-indigo-500"></i> NOVA 影像加強引擎
+            </h1>
             <span id="cv-status" class="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded border border-yellow-500/50">OpenCV 載入中...</span>
         </div>
 
@@ -29,14 +32,14 @@
         </label>
 
         <div class="relative w-full bg-black rounded-xl overflow-hidden border border-slate-700 mb-6 min-h-[300px] flex items-center justify-center">
-            <img id="imageSrc" class="hidden max-w-full max-h-[500px] object-contain">
-            <canvas id="canvasOutput" class="hidden max-w-full max-h-[500px] object-contain"></canvas>
+            <img id="imageSrc" class="hidden max-w-full max-h-[600px] object-contain">
+            <canvas id="canvasOutput" class="hidden max-w-full max-h-[600px] object-contain"></canvas>
             <p id="placeholder-text" class="text-slate-500">尚未載入圖片</p>
             
             <div id="processing-overlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-10 text-center p-4">
                 <div class="loader mb-4"></div>
                 <p id="processing-text" class="text-blue-400 font-bold animate-pulse">AI 運算處理中...</p>
-                <p class="text-xs text-slate-400 mt-2">依據網路與設備效能，可能需要數秒至數十秒</p>
+                <p class="text-xs text-slate-400 mt-2">請勿離開頁面，AI 正在重構您的影像細節</p>
             </div>
         </div>
 
@@ -47,9 +50,11 @@
             <button id="btn-100mp" onclick="processImage('100mp')" disabled class="bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
                 <i class="ph-bold ph-sparkle"></i> 100MP 運算
             </button>
-            <button id="btn-nano" onclick="processWithNanoBanana()" disabled class="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 shadow-lg shadow-orange-500/20">
-                <i class="ph-bold ph-magic-wand"></i> Nano 重構
+            
+            <button id="btn-ai" onclick="processWithReplicate()" disabled class="bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 shadow-lg shadow-indigo-500/20">
+                <i class="ph-bold ph-cpu"></i> AI 重構
             </button>
+
             <button id="btn-download" onclick="downloadImage()" disabled class="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
                 <i class="ph-bold ph-download-simple"></i> 儲存下載
             </button>
@@ -60,7 +65,7 @@
         let cvReady = false;
         let currentMode = 'original';
 
-        // 載入圖片並解鎖按鈕
+        // 載入圖片
         function loadImage(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -74,80 +79,65 @@
                 if (cvReady) {
                     document.getElementById('btn-2x').disabled = false;
                     document.getElementById('btn-100mp').disabled = false;
-                    document.getElementById('btn-nano').disabled = false;
+                    document.getElementById('btn-ai').disabled = false;
                     document.getElementById('btn-download').disabled = true; 
                 }
             };
         }
 
-        // OpenCV 本地端處理 (2X & 100MP)
+        // --- OpenCV 本地處理 (2X / 100MP) ---
         async function processImage(mode) {
             if (!cvReady) return alert("OpenCV 尚未載入完畢");
             
             document.getElementById('processing-overlay').classList.remove('hidden');
             document.getElementById('processing-overlay').classList.add('flex');
-            document.getElementById('processing-text').innerText = mode === '2x' ? "2X AI 拓展運算中..." : "100MP 超高畫素運算中...";
+            document.getElementById('processing-text').innerText = mode === '2x' ? "2X 演算中..." : "100MP 畫素重構中...";
             
             setTimeout(() => {
                 try {
                     let src_rgba = cv.imread(document.getElementById('imageSrc'));
                     let src = new cv.Mat();
-                    cv.cvtColor(src_rgba, src, cv.COLOR_RGBA2RGB);
+                    cv.cvtColor(src_rgba, src, cv.COLOR_RGBA2RGB); // 轉為 3 通道避免色彩錯亂
                     src_rgba.delete(); 
 
                     let dst = new cv.Mat();
 
                     if (mode === '2x') {
+                        // 2X 模式：雙邊濾波 + Bicubic 放大 + 輕度銳化
                         let enhancedSrc = new cv.Mat();
                         cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
-
                         cv.resize(enhancedSrc, dst, new cv.Size(src.cols * 2, src.rows * 2), 0, 0, cv.INTER_CUBIC);
                         enhancedSrc.delete();
-
-                        let blurred = new cv.Mat();
-                        cv.GaussianBlur(dst, blurred, new cv.Size(0, 0), 3);
-                        cv.addWeighted(dst, 1.5, blurred, -0.5, 0, dst);
-                        blurred.delete();
-
-                    } else if (mode === '100mp') {
-                        let totalPixels = src.cols * src.rows;
+                    } 
+                    else if (mode === '100mp') {
+                        // 100MP 模式：CLAHE 紋理增強 + 飽和度提升 + 設備安全上限放大
                         let enhancedSrc = new cv.Mat();
-                        
+                        let totalPixels = src.cols * src.rows;
+
                         if (totalPixels > 3000000) {
-                            src.copyTo(enhancedSrc);
+                            src.copyTo(enhancedSrc); // 大圖略過耗能濾波避免閃退
                         } else {
                             cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
                             let lab = new cv.Mat();
                             cv.cvtColor(enhancedSrc, lab, cv.COLOR_RGB2LAB);
                             let labPlanes = new cv.MatVector();
                             cv.split(lab, labPlanes);
-                            
-                            let lChannel = labPlanes.get(0); 
-                            let clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-                            clahe.apply(lChannel, lChannel);
+                            let lChannel = labPlanes.get(0);
+                            new cv.CLAHE(2.0, new cv.Size(8, 8)).apply(lChannel, lChannel);
                             labPlanes.set(0, lChannel);
-                            
                             cv.merge(labPlanes, lab);
                             cv.cvtColor(lab, enhancedSrc, cv.COLOR_LAB2RGB);
-                            
-                            lChannel.delete(); clahe.delete();
-                            lab.delete(); labPlanes.delete();
+                            lChannel.delete(); lab.delete(); labPlanes.delete();
                         }
 
-                        let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
-                        let maxPixels = isMobile ? 8000000 : 16000000; 
-                        let targetPixels = 100000000; 
-                        if (targetPixels > maxPixels) targetPixels = maxPixels;
+                        let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|Android/i);
+                        let maxPixels = isMobile ? 8000000 : 16000000; // 安全上限
+                        let ratio = Math.sqrt(maxPixels / totalPixels);
+                        if (ratio < 1) ratio = 1;
+                        if (ratio > 3) ratio = 3;
 
-                        let ratio = Math.sqrt(targetPixels / (src.cols * src.rows));
-                        if (ratio > 3) ratio = 3; 
-                        if (ratio < 1) ratio = 1; 
-
-                        let width = Math.round(src.cols * ratio);
-                        let height = Math.round(src.rows * ratio);
-                        
-                        cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
-                        enhancedSrc.delete(); 
+                        cv.resize(enhancedSrc, dst, new cv.Size(Math.round(src.cols * ratio), Math.round(src.rows * ratio)), 0, 0, cv.INTER_CUBIC);
+                        enhancedSrc.delete();
                     }
 
                     document.getElementById('imageSrc').classList.add('hidden');
@@ -157,12 +147,11 @@
                     
                     document.getElementById('btn-download').disabled = false;
                     currentMode = mode;
-                    
                     src.delete(); dst.delete();
                     
                 } catch (e) {
                     console.error(e);
-                    alert("處理失敗！可能是圖片過大導致瀏覽器記憶體不足。\n建議先縮小圖片或使用電腦版瀏覽器進行運算。");
+                    alert("處理失敗：記憶體溢位。請嘗試縮小原始圖片。");
                 } finally {
                     document.getElementById('processing-overlay').classList.add('hidden');
                     document.getElementById('processing-overlay').classList.remove('flex');
@@ -170,87 +159,90 @@
             }, 100); 
         }
 
-        // Nano Banana 雲端 API 處理
-        async function processWithNanoBanana() {
-            let apiKey = localStorage.getItem('nova_key_gemini');
-            if (!apiKey) {
-                apiKey = prompt("未偵測到您的 Gemini API Key！\n請直接在此輸入 (將與 NOVA 共用)：");
-                if (!apiKey) return;
-                localStorage.setItem('nova_key_gemini', apiKey);
+        // --- Replicate AI 雲端重構 (真正無中生有細節) ---
+        async function processWithReplicate() {
+            let apiToken = localStorage.getItem('replicate_api_token');
+            if (!apiToken) {
+                apiToken = prompt("請輸入您的 Replicate API Token (將儲存於本地)：");
+                if (!apiToken) return;
+                localStorage.setItem('replicate_api_token', apiToken);
             }
 
             const imgEl = document.getElementById('imageSrc');
-            if (!imgEl || !imgEl.src) return alert("請先上傳圖片！");
+            if (!imgEl || !imgEl.src) return alert("請先上傳圖片");
 
             document.getElementById('processing-overlay').classList.remove('hidden');
             document.getElementById('processing-overlay').classList.add('flex');
-            document.getElementById('processing-text').innerText = "🍌 Nano Banana 雲端重構中...\n(將由 Google 伺服器運算，請稍候 5~15 秒)";
+            document.getElementById('processing-text').innerText = "🤖 AI 深度重構中...\n(由雲端 GPU 處理，約需 15 秒)";
 
             try {
+                // 將圖片轉為 Base64 (限制最大寬度避免上傳過久)
                 const canvas = document.createElement('canvas');
                 let scale = 1;
-                if (imgEl.naturalWidth > 4096) scale = 4096 / imgEl.naturalWidth;
-                
+                if (imgEl.naturalWidth > 2048) scale = 2048 / imgEl.naturalWidth;
                 canvas.width = imgEl.naturalWidth * scale;
                 canvas.height = imgEl.naturalHeight * scale;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(imgEl, 0, 0, canvas.width, canvas.height);
-                const base64Data = canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+                const base64Data = canvas.toDataURL('image/jpeg', 0.85);
 
-                const payload = {
-                    contents: [{
-                        parts: [
-                            { text: "Please act as an advanced Image-to-Image Super Resolution model. Upscale this image, extremely enhance the micro-details (like skin textures, fabrics, or materials), adjust lighting naturally, and output the reconstructed high-resolution image without changing any original context or identity." },
-                            { inline_data: { mime_type: "image/jpeg", data: base64Data } }
-                        ]
-                    }],
-                    generationConfig: { temperature: 0.2 } 
-                };
-
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                // 呼叫 Replicate API
+                const response = await fetch("https://api.replicate.com/v1/predictions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Token ${apiToken}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        version: "da8c1e8a261899e74656f5054179e89d6e4df9c3167b57b12d577d61295b92b6", // Real-ESRGAN
+                        input: { image: base64Data, upscale: 2, face_enhance: true }
+                    })
                 });
 
                 const data = await response.json();
+                if (!response.ok) throw new Error(data.detail || "API 呼叫失敗");
 
-                if (!response.ok) {
-                    throw new Error(data.error?.message || "API 請求失敗，請確認 API 金鑰是否有效。");
+                const predictionId = data.id;
+                let resultUrl = null;
+
+                // 輪詢結果
+                while (!resultUrl) {
+                    const checkRes = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+                        headers: { "Authorization": `Token ${apiToken}` }
+                    });
+                    const checkData = await checkRes.json();
+                    if (checkData.status === "succeeded") {
+                        resultUrl = checkData.output;
+                        break;
+                    } else if (checkData.status === "failed") throw new Error("AI 運算失敗");
+                    await new Promise(r => setTimeout(r, 2000));
                 }
 
-                let generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-                
-                if (generatedText && !data.candidates?.[0]?.content?.parts?.[0]?.inlineData) {
-                    alert("✅ 模型已分析完畢！\n\n目前的 Gemini API 權限為「視覺分析」尚未開放「直接回傳圖片」。它對這張圖的重構分析是：\n" + generatedText.substring(0, 150) + "...");
-                } else {
-                    const resultBase64 = data.candidates[0].content.parts[0].inlineData.data;
-                    const resultImg = new Image();
-                    resultImg.onload = () => {
-                        const outCanvas = document.getElementById('canvasOutput');
-                        outCanvas.width = resultImg.width;
-                        outCanvas.height = resultImg.height;
-                        const outCtx = outCanvas.getContext('2d');
-                        outCtx.drawImage(resultImg, 0, 0);
-                        
-                        document.getElementById('imageSrc').classList.add('hidden');
-                        outCanvas.classList.remove('hidden');
-                        document.getElementById('btn-download').disabled = false;
-                        currentMode = 'NanoBanana';
-                    };
-                    resultImg.src = "data:image/jpeg;base64," + resultBase64;
-                }
+                // 顯示 AI 重構後的圖片
+                const resultImg = new Image();
+                resultImg.crossOrigin = "anonymous";
+                resultImg.onload = () => {
+                    const outCanvas = document.getElementById('canvasOutput');
+                    outCanvas.width = resultImg.width;
+                    outCanvas.height = resultImg.height;
+                    outCanvas.getContext('2d').drawImage(resultImg, 0, 0);
+                    document.getElementById('imageSrc').classList.add('hidden');
+                    outCanvas.classList.remove('hidden');
+                    document.getElementById('btn-download').disabled = false;
+                    currentMode = 'AI_Enhanced';
+                };
+                resultImg.src = resultUrl;
 
             } catch (e) {
                 console.error(e);
-                alert("❌ Nano Banana 運算失敗：\n" + e.message);
+                alert("❌ AI 重構失敗：" + e.message + "\n(請確認您的 Token 是否有效及帳戶是否有額度)");
             } finally {
                 document.getElementById('processing-overlay').classList.add('hidden');
                 document.getElementById('processing-overlay').classList.remove('flex');
             }
         }
 
-        // 下載圖片
+        // 下載功能
         function downloadImage() {
             const canvas = document.getElementById('canvasOutput');
             const link = document.createElement('a');
@@ -260,26 +252,22 @@
             link.click();
         }
 
-        // OpenCV 伺服器啟動監聽器
+        // OpenCV 初始化
         var Module = {
             onRuntimeInitialized: function() {
                 cvReady = true;
                 const statusEl = document.getElementById('cv-status');
-                if(statusEl) {
-                    statusEl.innerText = "✅ 引擎已就緒 (v4.5.0)";
-                    statusEl.className = "text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded border border-emerald-500/50";
-                }
+                statusEl.innerText = "✅ 引擎已就緒 (v4.5.0 WASM)";
+                statusEl.className = "text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded border border-emerald-500/50";
                 
-                const img = document.getElementById('imageSrc');
-                if (img && !img.classList.contains('hidden') && img.src !== "") {
+                if (document.getElementById('imageSrc').src !== "") {
                     document.getElementById('btn-2x').disabled = false;
                     document.getElementById('btn-100mp').disabled = false;
-                    document.getElementById('btn-nano').disabled = false;
+                    document.getElementById('btn-ai').disabled = false;
                 }
             }
         };
     </script>
-    
     <script async src="https://docs.opencv.org/4.5.0/opencv.js" type="text/javascript"></script>
 </body>
 </html>
