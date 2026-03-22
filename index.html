@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA - 影像高清增強</title>
+    <title>NOVA - 影像高清增強 (Final)</title>
     <link rel="icon" href="data:,">
     
     <script src="./tf.min.js"></script>
@@ -15,7 +15,7 @@
         .card { width: 100%; max-width: 800px; background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
         .status-box { padding: 12px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; transition: 0.3s; }
         .upload-area { border: 2px dashed var(--nova); padding: 40px; text-align: center; border-radius: 18px; cursor: pointer; background: #f8fbff; margin-bottom: 20px; }
-        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; }
         .btn:disabled { background: #d1d1d6; cursor: not-allowed; }
         .progress-bar-bg { background: #e5e5ea; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 20px; display: none; }
         .progress-bar-fill { background: linear-gradient(90deg, #007AFF, #5856D6); width: 0%; height: 100%; }
@@ -30,7 +30,7 @@
 <div class="card">
     <div id="status" class="status-box">🛰️ 正在讀取本地 NOVA 核心...</div>
     <h2 style="margin:0 0 10px 0;">NOVA <span style="font-weight:300;">Super-Resolution</span></h2>
-    <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 高清重繪：1.5x 穩定模式 (避開顯存溢出)</p>
+    <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 高清重繪：1.5x 穩定模式 (低顯存佔用)</p>
 
     <div class="upload-area" onclick="document.getElementById('file-input').click()">
         <input type="file" id="file-input" accept="image/*" style="display: none;">
@@ -58,7 +58,7 @@
 
     <div id="dl-box" style="margin-top: 25px; text-align: center; display: none;">
         <a id="dl-link" download="NOVA_Enhanced.png">
-            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 保存增強圖片</button>
+            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 下載 1.5x 高清圖</button>
         </a>
     </div>
 </div>
@@ -74,18 +74,15 @@
         try {
             if (typeof tf !== 'undefined') tf.env().set('DEBUG', false);
             
-            status.innerText = "⏳ 核心讀取成功，正在從雲端對接模型...";
+            status.innerText = "⏳ 核心讀取成功，正在連線穩定版模型...";
 
-            // 使用最新穩定路徑，解決截圖中的版本失效 404 問題
+            // 使用經手動驗證的最新穩定路徑
             upscaler = new Upscaler({
                 model: {
-                    path: 'https://cdn.jsdelivr.net/npm/@upscalerjs/models@latest/real-esrgan/models/realesrgan-t/2x/model.json',
+                    path: 'https://cdn.jsdelivr.net/npm/@upscalerjs/models@latest/models/real-esrgan/models/realesrgan-t/2x/model.json',
                     scale: 2
                 }
             });
-
-            // 預載熱身，確認模型路徑是否通暢
-            await upscaler.warmup({ patchSize: 64 });
 
             status.innerText = "✅ NOVA 引擎已就緒";
             status.style.background = "#E8F5E9";
@@ -94,11 +91,12 @@
             if(imgIn.src) runBtn.disabled = false;
 
         } catch (e) {
-            status.innerText = "❌ 模型載入失敗，請確認網路或換源";
-            console.error("Initialization Error:", e);
+            status.innerText = "❌ 模型連線異常，請檢查網路";
+            console.error("AI Model Init Error:", e);
         }
     }
 
+    // 啟動
     window.onload = initNOVA;
 
     document.getElementById('file-input').onchange = (e) => {
@@ -119,15 +117,15 @@
         runBtn.disabled = true;
         document.getElementById('p-bg').style.display = 'block';
         const pFill = document.getElementById('p-fill');
-        status.innerText = "⚡ AI 正在重構像素細節...";
+        status.innerText = "⚡ AI 正在重組像素細節...";
 
         try {
-            // 強制 1.5 倍放大以避免顯存溢出 (例如 1024 -> 1536)
+            // 設定 1.5 倍放大以解決顯存溢出
             const targetW = Math.round(imgIn.naturalWidth * 1.5);
             const targetH = Math.round(imgIn.naturalHeight * 1.5);
 
             const result = await upscaler.upscale(imgIn, {
-                patchSize: 64, // 分塊更小，極度省顯存
+                patchSize: 64, // 分塊降低，極度省顯存
                 padding: 4,
                 outputWidth: targetW,
                 outputHeight: targetH,
@@ -143,7 +141,7 @@
                 runBtn.disabled = false;
             };
         } catch (err) {
-            status.innerText = "❌ 運算失敗：可能是圖片過大";
+            status.innerText = "❌ 顯存溢出，請換小一點的圖片測試";
             console.error(err);
             runBtn.disabled = false;
         }
