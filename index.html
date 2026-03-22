@@ -92,77 +92,72 @@
             // 延遲執行以確保 UI 遮罩能先渲染出來
             setTimeout(() => {
                 try {
-                    let src = cv.imread(document.getElementById('imageSrc'));
+                    // 1. 讀取 HTML 圖片並強制轉為純淨 3 通道 RGB
+                    let src_rgba = cv.imread(document.getElementById('imageSrc'));
+                    let src = new cv.Mat();
+                    cv.cvtColor(src_rgba, src, cv.COLOR_RGBA2RGB);
+                    src_rgba.delete(); 
+
                     let dst = new cv.Mat();
 
                     if (mode === '2x') {
-                        // 2X 放大
-                        cv.resize(src, dst, new cv.Size(src.cols * 2, src.rows * 2), 0, 0, cv.INTER_CUBIC);
-                        
-                        // 雙邊濾波降噪
-                        let filtered = new cv.Mat();
-                        cv.cvtColor(dst, filtered, cv.COLOR_RGBA2RGB); // 確保格式正確
-                        cv.bilateralFilter(dst, filtered, 5, 50, 50);
-                        
-                        // USM 銳化
+                        // 【架構大逆轉】先在原圖做耗效能的雙邊降噪，再放大！
+                        let enhancedSrc = new cv.Mat();
+                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50); // 記憶體消耗降至 1/4
+
+                        // 乾淨的圖處理好後，正式放大 2 倍
+                        cv.resize(enhancedSrc, dst, new cv.Size(src.cols * 2, src.rows * 2), 0, 0, cv.INTER_CUBIC);
+                        enhancedSrc.delete();
+
+                        // 放大後，使用極低記憶體消耗的 GaussianBlur 進行 USM 邊緣銳化
                         let blurred = new cv.Mat();
-                        cv.GaussianBlur(filtered, blurred, new cv.Size(0, 0), 3);
-                        cv.addWeighted(filtered, 1.5, blurred, -0.5, 0, dst);
-                        
-                        filtered.delete(); blurred.delete();
+                        cv.GaussianBlur(dst, blurred, new cv.Size(0, 0), 3);
+                        cv.addWeighted(dst, 1.5, blurred, -0.5, 0, dst);
+                        blurred.delete();
 
                     } else if (mode === '100mp') {
-                        // 【記憶體優化版】動態限制最大畫素，防止瀏覽器崩潰
-                        // 偵測設備：手機/平板限制 1600 萬畫素 (iOS Canvas 硬體上限)，電腦限制 3600 萬畫素
+                        // 【架構大逆轉】先在原圖做降噪與色彩強化，避開破 GB 的記憶體吃載
+                        let enhancedSrc = new cv.Mat();
+                        cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
+                        
+                        // 在原圖尺寸提升飽和度
+                        let hsv = new cv.Mat();
+                        cv.cvtColor(enhancedSrc, hsv, cv.COLOR_RGB2HSV);
+                        let channels = new cv.MatVector();
+                        cv.split(hsv, channels);
+                        let s = channels.get(1);
+                        s.convertTo(s, -1, 1.2, 0); // 飽和度 +20%
+                        channels.set(1, s);
+                        cv.merge(channels, hsv);
+                        cv.cvtColor(hsv, enhancedSrc, cv.COLOR_HSV2RGB);
+                        
+                        hsv.delete(); channels.delete(); s.delete();
+
+                        // 計算安全放大上限 (手機 16MP, 電腦 36MP)
                         let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
                         let maxPixels = isMobile ? 16000000 : 36000000; 
-                        
-                        let targetPixels = 100000000; // 原始目標 1億
-                        // 如果 1 億畫素超過設備安全上限，就降級到設備能承受的 Ultra HD 極限
+                        let targetPixels = 100000000; // 目標 1 億畫素
                         if (targetPixels > maxPixels) targetPixels = maxPixels;
 
-                        // 計算放大比例，限制最多只能放大原圖面積的 4 倍 (避免小圖被硬生生拉成巨大馬賽克而耗盡記憶體)
                         let ratio = Math.sqrt(targetPixels / (src.cols * src.rows));
-                        if (ratio > 2) ratio = 2; // 線性放大最多 2 倍 (面積 4 倍)
-                        if (ratio < 1) ratio = 1; // 避免反而縮小
+                        if (ratio > 3) ratio = 3; // 保護機制：限制單邊最大放大 3 倍 (面積 9 倍)
+                        if (ratio < 1) ratio = 1; 
 
                         let width = Math.round(src.cols * ratio);
                         let height = Math.round(src.rows * ratio);
                         
-                        cv.resize(src, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
-                        
-                        // 分段處理並【立刻】釋放記憶體，絕不囤積
-                        let filtered = new cv.Mat();
-                        cv.bilateralFilter(dst, filtered, 5, 50, 50); // 參數微調以減輕運算負擔
-                        
+                        // 正式將處理好的乾淨圖片放大到超高畫素
+                        cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
+                        enhancedSrc.delete(); 
+
+                        // 針對超大圖進行低負擔的 USM 銳化，找回細節
                         let blurred = new cv.Mat();
-                        cv.GaussianBlur(filtered, blurred, new cv.Size(0, 0), 3);
-                        cv.addWeighted(filtered, 1.6, blurred, -0.6, 0, dst);
-                        
-                        // 第一階段完成，立刻殺掉這兩個佔用極大的變數
-                        filtered.delete(); 
+                        cv.GaussianBlur(dst, blurred, new cv.Size(0, 0), 3);
+                        cv.addWeighted(dst, 1.6, blurred, -0.6, 0, dst);
                         blurred.delete();
-                        
-                        // 色彩強化階段
-                        let hsv = new cv.Mat();
-                        cv.cvtColor(dst, hsv, cv.COLOR_RGB2HSV);
-                        let channels = new cv.MatVector();
-                        cv.split(hsv, channels);
-                        
-                        let s = channels.get(1);
-                        s.convertTo(s, -1, 1.2, 0); // 飽和度 +20%
-                        channels.set(1, s);
-                        
-                        cv.merge(channels, hsv);
-                        cv.cvtColor(hsv, dst, cv.COLOR_HSV2RGB);
-                        
-                        // 第二階段完成，全部清空
-                        hsv.delete(); 
-                        channels.delete(); 
-                        s.delete();
                     }
 
-                    // 輸出到 Canvas
+                    // 輸出到 Canvas 顯示
                     document.getElementById('imageSrc').classList.add('hidden');
                     const canvas = document.getElementById('canvasOutput');
                     canvas.classList.remove('hidden');
@@ -171,7 +166,9 @@
                     document.getElementById('btn-download').disabled = false;
                     currentMode = mode;
                     
+                    // 釋放最後殘留的記憶體
                     src.delete(); dst.delete();
+                    
                 } catch (e) {
                     console.error(e);
                     alert("處理失敗！可能是圖片過大導致瀏覽器記憶體不足。\n建議先縮小圖片或使用電腦版瀏覽器進行 100MP 運算。");
