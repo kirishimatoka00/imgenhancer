@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA - 影像高清增強 (Final Version)</title>
+    <title>NOVA - Real-ESRGAN 高清增強</title>
     <link rel="icon" href="data:,">
     
     <script src="./tf.min.js"></script>
@@ -13,22 +13,24 @@
         :root { --nova: #007AFF; --success: #34C759; --bg: #f2f2f7; }
         body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; margin: 0; }
         .card { width: 100%; max-width: 800px; background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
-        .status-box { padding: 12px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; }
+        .status-box { padding: 12px; border-radius: 12px; background: #eee; font-size: 14px; text-align: center; margin-bottom: 20px; font-weight: 600; transition: 0.3s; }
         .upload-area { border: 2px dashed var(--nova); padding: 40px; text-align: center; border-radius: 18px; cursor: pointer; background: #f8fbff; margin-bottom: 20px; }
-        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; }
+        .btn { background: var(--nova); color: white; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         .btn:disabled { background: #d1d1d6; cursor: not-allowed; }
         .progress-bar-bg { background: #e5e5ea; height: 10px; border-radius: 5px; overflow: hidden; margin-top: 20px; display: none; }
         .progress-bar-fill { background: linear-gradient(90deg, #007AFF, #5856D6); width: 0%; height: 100%; }
-        .img-box img { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; background: #fafafa; }
+        .result-view { display: flex; gap: 20px; margin-top: 30px; flex-wrap: wrap; }
+        .view-box { flex: 1; min-width: 280px; text-align: center; }
+        .view-box img { max-width: 100%; border-radius: 12px; border: 1px solid #ddd; background: #fafafa; }
         .px-tag { display: inline-block; margin-top: 10px; font-size: 12px; background: #333; color: #fff; padding: 3px 10px; border-radius: 6px; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <div id="status" class="status-box">🛰️ 正在讀取本地 NOVA 核心...</div>
+    <div id="status" class="status-box">🛰️ 正在啟動 NOVA AI 核心...</div>
     <h2 style="margin:0 0 10px 0;">NOVA <span style="font-weight:300;">Super-Resolution</span></h2>
-    <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 高清重繪：1.5x 穩定模式 (低顯存佔用)</p>
+    <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 像素重繪：1.5x 穩定模式 (基於 Real-ESRGAN)</p>
 
     <div class="upload-area" onclick="document.getElementById('file-input').click()">
         <input type="file" id="file-input" accept="image/*" style="display: none;">
@@ -41,13 +43,13 @@
         <div class="progress-bar-fill" id="p-fill"></div>
     </div>
 
-    <div style="display: flex; gap: 20px; margin-top: 30px; flex-wrap: wrap;">
-        <div style="flex: 1; text-align: center;">
-            <p style="font-size:13px; color:#888;">原始</p>
+    <div class="result-view">
+        <div class="view-box">
+            <p style="font-size:13px; color:#888;">原始來源</p>
             <img id="img-in" src="">
             <div id="px-in" class="px-tag">0 x 0</div>
         </div>
-        <div style="flex: 1; text-align: center;">
+        <div class="view-box">
             <p style="font-size:13px; color:var(--nova);">1.5x 高清輸出</p>
             <img id="img-out" src="">
             <div id="px-out" class="px-tag" style="background:var(--nova)">0 x 0</div>
@@ -56,7 +58,7 @@
 
     <div id="dl-box" style="margin-top: 25px; text-align: center; display: none;">
         <a id="dl-link" download="NOVA_Enhanced.png">
-            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 下載增強圖片</button>
+            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 保存高清圖片</button>
         </a>
     </div>
 </div>
@@ -70,10 +72,12 @@
 
     async function initNOVA() {
         try {
+            // 關閉 TensorFlow 除錯模式以保持 Console 乾淨
             if (typeof tf !== 'undefined') tf.env().set('DEBUG', false);
+            
             status.innerText = "⏳ 核心讀取成功，正在校對模型路徑...";
 
-            // 核心修正：jsDelivr 0.10.0 版的精確模型路徑
+            // 核心修正：jsDelivr 上目前絕對正確且存在的路徑
             upscaler = new Upscaler({
                 model: {
                     path: 'https://cdn.jsdelivr.net/npm/@upscalerjs/real-esrgan@0.10.0/models/realesrgan-t/model.json',
@@ -81,6 +85,7 @@
                 }
             });
 
+            // 標記就緒
             status.innerText = "✅ NOVA 引擎已就緒";
             status.style.background = "#E8F5E9";
             status.style.color = "#2E7D32";
@@ -88,11 +93,12 @@
             if(imgIn.src) runBtn.disabled = false;
 
         } catch (e) {
-            status.innerText = "❌ 模型連線異常，請檢查網路";
-            console.error("AI Model Init Error:", e);
+            status.innerText = "❌ 模型連線失敗，請檢查網路環境";
+            console.error("Initialization Error:", e);
         }
     }
 
+    // 啟動引擎
     window.onload = initNOVA;
 
     document.getElementById('file-input').onchange = (e) => {
@@ -113,10 +119,10 @@
         runBtn.disabled = true;
         document.getElementById('p-bg').style.display = 'block';
         const pFill = document.getElementById('p-fill');
-        status.innerText = "⚡ AI 正在重構像素細節...";
+        status.innerText = "⚡ AI 正在重構像素細節 (本地運算)...";
 
         try {
-            // 設定 1.5 倍放大以解決顯存溢出
+            // 強制 1.5 倍放大，並縮小分塊 (patchSize) 以防止顯存溢出
             const targetW = Math.round(imgIn.naturalWidth * 1.5);
             const targetH = Math.round(imgIn.naturalHeight * 1.5);
 
@@ -125,7 +131,9 @@
                 padding: 4,
                 outputWidth: targetW,
                 outputHeight: targetH,
-                progress: (p) => { pFill.style.width = Math.round(p * 100) + '%'; }
+                progress: (p) => {
+                    pFill.style.width = Math.round(p * 100) + '%';
+                }
             });
 
             imgOut.src = result;
@@ -137,7 +145,8 @@
                 runBtn.disabled = false;
             };
         } catch (err) {
-            status.innerText = "❌ 顯存溢出，請換小一點的圖片測試";
+            status.innerText = "❌ 運算失敗：顯存溢出 (圖片過大)";
+            console.error(err);
             runBtn.disabled = false;
         }
     }
