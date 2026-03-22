@@ -121,26 +121,34 @@
                         let enhancedSrc = new cv.Mat();
                         
                         if (totalPixels > 3000000) {
-                            // 如果原圖已經大於 300 萬畫素，直接跳過耗能的濾波器，以防記憶體崩潰
+                            // 如果原圖已經大於 300 萬畫素，跳過耗能濾波器
                             src.copyTo(enhancedSrc);
                         } else {
-                            // 只有小圖才進行降噪與 CLAHE
                             cv.bilateralFilter(src, enhancedSrc, 5, 50, 50);
                             let lab = new cv.Mat();
                             cv.cvtColor(enhancedSrc, lab, cv.COLOR_RGB2LAB);
                             let labPlanes = new cv.MatVector();
                             cv.split(lab, labPlanes);
+                            
+                            // 【關鍵修復】嚴格的記憶體管理，避免 .get(0) 產生洩漏
+                            let lChannel = labPlanes.get(0); 
                             let clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-                            clahe.apply(labPlanes.get(0), labPlanes.get(0));
-                            labPlanes.set(0, labPlanes.get(0));
+                            clahe.apply(lChannel, lChannel);
+                            labPlanes.set(0, lChannel);
+                            
                             cv.merge(labPlanes, lab);
                             cv.cvtColor(lab, enhancedSrc, cv.COLOR_LAB2RGB);
-                            lab.delete(); labPlanes.delete(); clahe.delete();
+                            
+                            // 立刻清空所有暫存指標
+                            lChannel.delete(); 
+                            clahe.delete();
+                            lab.delete(); 
+                            labPlanes.delete();
                         }
 
-                        // 安全放大上限
+                        // 極致安全放大上限 (手機 8MP=4K, 電腦 16MP)
                         let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
-                        let maxPixels = isMobile ? 12000000 : 24000000; 
+                        let maxPixels = isMobile ? 8000000 : 16000000; 
                         let targetPixels = 100000000; 
                         if (targetPixels > maxPixels) targetPixels = maxPixels;
 
@@ -151,7 +159,8 @@
                         let width = Math.round(src.cols * ratio);
                         let height = Math.round(src.rows * ratio);
                         
-                        cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_LANCZOS4);
+                        // 【關鍵修復】降回 INTER_CUBIC，避開 LANCZOS4 的記憶體黑洞
+                        cv.resize(enhancedSrc, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
                         enhancedSrc.delete(); 
                     }
 
