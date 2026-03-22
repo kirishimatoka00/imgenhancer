@@ -112,33 +112,54 @@
                         filtered.delete(); blurred.delete();
 
                     } else if (mode === '100mp') {
-                        // 100MP 放大 (約一億畫素)
-                        let targetPixels = 100000000;
+                        // 【記憶體優化版】動態限制最大畫素，防止瀏覽器崩潰
+                        // 偵測設備：手機/平板限制 1600 萬畫素 (iOS Canvas 硬體上限)，電腦限制 3600 萬畫素
+                        let isMobile = window.innerWidth < 768 || navigator.userAgent.match(/iPhone|iPad|iPod|Android/i);
+                        let maxPixels = isMobile ? 16000000 : 36000000; 
+                        
+                        let targetPixels = 100000000; // 原始目標 1億
+                        // 如果 1 億畫素超過設備安全上限，就降級到設備能承受的 Ultra HD 極限
+                        if (targetPixels > maxPixels) targetPixels = maxPixels;
+
+                        // 計算放大比例，限制最多只能放大原圖面積的 4 倍 (避免小圖被硬生生拉成巨大馬賽克而耗盡記憶體)
                         let ratio = Math.sqrt(targetPixels / (src.cols * src.rows));
+                        if (ratio > 2) ratio = 2; // 線性放大最多 2 倍 (面積 4 倍)
+                        if (ratio < 1) ratio = 1; // 避免反而縮小
+
                         let width = Math.round(src.cols * ratio);
                         let height = Math.round(src.rows * ratio);
                         
                         cv.resize(src, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
                         
+                        // 分段處理並【立刻】釋放記憶體，絕不囤積
                         let filtered = new cv.Mat();
-                        cv.bilateralFilter(dst, filtered, 5, 75, 75);
+                        cv.bilateralFilter(dst, filtered, 5, 50, 50); // 參數微調以減輕運算負擔
                         
                         let blurred = new cv.Mat();
                         cv.GaussianBlur(filtered, blurred, new cv.Size(0, 0), 3);
                         cv.addWeighted(filtered, 1.6, blurred, -0.6, 0, dst);
                         
-                        // 轉換為 HSV 提升飽和度
+                        // 第一階段完成，立刻殺掉這兩個佔用極大的變數
+                        filtered.delete(); 
+                        blurred.delete();
+                        
+                        // 色彩強化階段
                         let hsv = new cv.Mat();
                         cv.cvtColor(dst, hsv, cv.COLOR_RGB2HSV);
                         let channels = new cv.MatVector();
                         cv.split(hsv, channels);
+                        
                         let s = channels.get(1);
-                        s.convertTo(s, -1, 1.2, 0); // Saturation +20%
+                        s.convertTo(s, -1, 1.2, 0); // 飽和度 +20%
                         channels.set(1, s);
+                        
                         cv.merge(channels, hsv);
                         cv.cvtColor(hsv, dst, cv.COLOR_HSV2RGB);
                         
-                        filtered.delete(); blurred.delete(); hsv.delete(); channels.delete(); s.delete();
+                        // 第二階段完成，全部清空
+                        hsv.delete(); 
+                        channels.delete(); 
+                        s.delete();
                     }
 
                     // 輸出到 Canvas
