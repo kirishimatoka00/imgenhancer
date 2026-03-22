@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA - 2x 高清影像增強 (本地核心版)</title>
+    <title>NOVA - 1.5x 高清影像增強 (2MP 穩定版)</title>
     <link rel="icon" href="data:,">
     
     <script src="./tf.min.js"></script>
@@ -28,15 +28,16 @@
 <body>
 
 <div class="card">
-    <div id="status" class="status-box">🛰️ 正在讀取本地 NOVA 核心...</div>
+    <div id="status" class="status-box">🛰️ 正在連線 NOVA AI 衛星...</div>
     <h2 style="margin:0 0 10px 0;">NOVA <span style="font-weight:300;">Super-Resolution</span></h2>
+    <p style="color:#666; font-size:14px; margin-bottom:20px;">AI 像素重繪：強制 100 萬 → 200 萬畫素 (1.5x 版)</p>
 
     <div class="upload-area" onclick="document.getElementById('file-input').click()">
         <input type="file" id="file-input" accept="image/*" style="display: none;">
         <p id="file-msg" style="margin:0; font-size:16px;">點擊選取圖片 或 拖放至此</p>
     </div>
 
-    <button id="run-btn" class="btn" onclick="startUpscale()" disabled>等待模型下載中...</button>
+    <button id="run-btn" class="btn" onclick="startUpscale()" disabled>等待核心載入...</button>
 
     <div class="progress-bar-bg" id="p-bg">
         <div class="progress-bar-fill" id="p-fill"></div>
@@ -44,20 +45,20 @@
 
     <div class="result-container">
         <div class="img-box">
-            <p style="font-size:13px; color:#888;">原始尺寸</p>
+            <p style="font-size:13px; color:#888;">原始 (1MP)</p>
             <img id="img-in" src="">
             <div id="px-in" class="px-tag">0 x 0</div>
         </div>
         <div class="img-box">
-            <p style="font-size:13px; color:var(--nova);">2x 高清輸出</p>
+            <p style="font-size:13px; color:var(--nova);">高清 (2MP)</p>
             <img id="img-out" src="">
             <div id="px-out" class="px-tag" style="background:var(--nova)">0 x 0</div>
         </div>
     </div>
 
     <div id="dl-box" style="margin-top: 25px; text-align: center; display: none;">
-        <a id="dl-link" download="NOVA_Enhanced.png">
-            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 保存高清圖</button>
+        <a id="dl-link" download="NOVA_Enhanced_2MP.png">
+            <button class="btn" style="background:var(--success); width: auto; padding: 14px 60px;">💾 保存圖片</button>
         </a>
     </div>
 </div>
@@ -70,35 +71,39 @@
     const imgIn = document.getElementById('img-in');
     const imgOut = document.getElementById('img-out');
 
-    // 1. 初始化 (直接抓取本地 JS)
+    // 核心初始化
     async function initEngine() {
         try {
+            // 抑制 TensorFlow 的重複註冊警告
+            if (typeof tf !== 'undefined') tf.env().set('DEBUG', false);
+            
             // 偵測 JS 是否讀取成功
             if (typeof tf === 'undefined' || typeof Upscaler === 'undefined') {
                 status.innerText = "❌ 找不到本地 js 檔案，請檢查檔名與路徑";
                 return;
             }
 
-            tf.env().set('DEBUG', false);
-            status.innerText = "⏳ 核心讀取成功，正在請求 AI 權重...";
+            status.innerText = "⏳ 核心讀取成功，正在請求 AI 權重模型 (20MB)...";
             
-            // 模型定義
+            // 直接定義模型 URL
             upscaler = new Upscaler({
                 model: {
                     path: 'https://unpkg.com/@upscalerjs/real-esrgan@0.0.10/models/realesrgan-t/model.json',
-                    scale: 2
+                    scale: 2 // 雖然模型是 2x，但我們可以在運算時強制指定輸出尺寸
                 }
             });
 
-            // 標記就緒
-            status.innerText = "✅ NOVA 本地引擎已就緒";
+            // 預熱 (patchSize 128 確保手機端穩定性)
+            await upscaler.warmup({ patchSize: 128 });
+            
+            status.innerText = "✅ NOVA 引擎已就緒 (1.5x 穩定版)";
             status.style.background = "#E8F5E9";
             status.style.color = "#2E7D32";
-            runBtn.innerText = "執行 2x 像素重繪";
+            runBtn.innerText = "執行 1.5x 高清重繪";
             if(imgIn.src) runBtn.disabled = false;
 
         } catch (e) {
-            status.innerText = "❌ 模型連線失敗";
+            status.innerText = "❌ 模型連線失敗，請檢查網路";
             console.error(e);
         }
     }
@@ -124,13 +129,20 @@
         runBtn.disabled = true;
         document.getElementById('p-bg').style.display = 'block';
         const pFill = document.getElementById('p-fill');
-        status.innerText = "⚡ 正在本地進行 AI 運算...";
+        status.innerText = "⚡ 正在本地運算... 第一次運算可能較久";
 
         try {
+            // 核心修正：手動指定輸出尺寸，強制 1.5 倍放大
+            const targetW = Math.round(imgIn.naturalWidth * 1.5);
+            const targetH = Math.round(imgIn.naturalHeight * 1.5);
+            console.log(`Targeting: ${targetW} x ${targetH}`);
+
             const result = await upscaler.upscale(imgIn, {
-                patchSize: 128,
+                patchSize: 64, // 降更低，進一步節省顯存
                 padding: 4,
-                progress: (p) => { pFill.style.width = Math.round(p * 100) + '%'; }
+                outputWidth: targetW, // 強制指定寬度
+                outputHeight: targetH, // 強制指定高度
+                progress: (percent) => { pFill.style.width = Math.round(percent * 100) + '%'; }
             });
 
             imgOut.src = result;
@@ -142,7 +154,7 @@
                 runBtn.disabled = false;
             };
         } catch (err) {
-            status.innerText = "❌ 顯存溢出，請更換小圖片";
+            status.innerText = "❌ 運算失敗：設備硬體不足";
             runBtn.disabled = false;
         }
     }
