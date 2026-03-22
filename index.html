@@ -101,7 +101,7 @@
                         
                         // 雙邊濾波降噪
                         let filtered = new cv.Mat();
-                        cv.cvtColor(dst, filtered, cv.COLOR_RGBA(2)RGB); // 確保格式正確
+                        cv.cvtColor(dst, filtered, cv.COLOR_RGBA2RGB); // 確保格式正確
                         cv.bilateralFilter(dst, filtered, 5, 50, 50);
                         
                         // USM 銳化
