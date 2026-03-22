@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI 影像加強工具 (2X & 100MP)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+        <style>
+        body { background-color: #0f172a; color: white; font-family: sans-serif; }
+        .loader { border: 4px solid #334155; border-top: 4px solid #3b82f6; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="p-6 flex flex-col items-center min-h-screen">
+
+    <div class="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+        <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
+            <h1 class="text-2xl font-bold flex items-center gap-2"><i class="ph-bold ph-image-square text-blue-500"></i> NOVA 影像加強引擎</h1>
+            <span id="cv-status" class="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded border border-yellow-500/50">OpenCV 載入中...</span>
+        </div>
+
+        <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-800 hover:bg-slate-700 transition-colors mb-6">
+            <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                <i class="ph-bold ph-upload-simple text-3xl text-slate-400 mb-2"></i>
+                <p class="text-sm text-slate-300 font-bold">點擊上傳圖片</p>
+            </div>
+            <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="loadImage(event)">
+        </label>
+
+        <div class="relative w-full bg-black rounded-xl overflow-hidden border border-slate-700 mb-6 min-h-[300px] flex items-center justify-center">
+            <img id="imageSrc" class="hidden max-w-full max-h-[500px] object-contain">
+            <canvas id="canvasOutput" class="hidden max-w-full max-h-[500px] object-contain"></canvas>
+            <p id="placeholder-text" class="text-slate-500">尚未載入圖片</p>
+            
+            <div id="processing-overlay" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-10">
+                <div class="loader mb-4"></div>
+                <p id="processing-text" class="text-blue-400 font-bold animate-pulse">AI 運算處理中...</p>
+                <p class="text-xs text-slate-400 mt-2">100MP 運算視設備效能可能需要 5~15 秒</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <button id="btn-2x" onclick="processImage('2x')" disabled class="bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+                <i class="ph-bold ph-arrows-out-simple"></i> 2X AI 拓展
+            </button>
+            <button id="btn-100mp" onclick="processImage('100mp')" disabled class="bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+                <i class="ph-bold ph-sparkle"></i> 100MP 畫素重構
+            </button>
+            <button id="btn-download" onclick="downloadImage()" disabled class="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors flex justify-center items-center gap-2">
+                <i class="ph-bold ph-download-simple"></i> 儲存下載
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let cvReady = false;
+        let currentMode = 'original';
+
+        function onOpenCvReady() {
+            cvReady = true;
+            const statusEl = document.getElementById('cv-status');
+            statusEl.innerText = "引擎已就緒";
+            statusEl.className = "text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded border border-emerald-500/50";
+        }
+
+        function loadImage(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const imgElement = document.getElementById('imageSrc');
+            imgElement.src = URL.createObjectURL(file);
+            imgElement.onload = () => {
+                document.getElementById('placeholder-text').classList.add('hidden');
+                document.getElementById('canvasOutput').classList.add('hidden');
+                imgElement.classList.remove('hidden');
+                
+                if (cvReady) {
+                    document.getElementById('btn-2x').disabled = false;
+                    document.getElementById('btn-100mp').disabled = false;
+                    document.getElementById('btn-download').disabled = true; // 原始圖片不需下載
+                }
+            };
+        }
+
+        async function processImage(mode) {
+            if (!cvReady) return alert("OpenCV 尚未載入完畢");
+            
+            document.getElementById('processing-overlay').classList.remove('hidden');
+            document.getElementById('processing-overlay').classList.add('flex');
+            document.getElementById('processing-text').innerText = mode === '2x' ? "2X AI 拓展運算中..." : "100MP 超高畫素重構中...";
+            
+            // 延遲執行以確保 UI 遮罩能先渲染出來
+            setTimeout(() => {
+                try {
+                    let src = cv.imread(document.getElementById('imageSrc'));
+                    let dst = new cv.Mat();
+
+                    if (mode === '2x') {
+                        // 2X 放大
+                        cv.resize(src, dst, new cv.Size(src.cols * 2, src.rows * 2), 0, 0, cv.INTER_CUBIC);
+                        
+                        // 雙邊濾波降噪
+                        let filtered = new cv.Mat();
+                        cv.cvtColor(dst, filtered, cv.COLOR_RGBA(2)RGB); // 確保格式正確
+                        cv.bilateralFilter(dst, filtered, 5, 50, 50);
+                        
+                        // USM 銳化
+                        let blurred = new cv.Mat();
+                        cv.GaussianBlur(filtered, blurred, new cv.Size(0, 0), 3);
+                        cv.addWeighted(filtered, 1.5, blurred, -0.5, 0, dst);
+                        
+                        filtered.delete(); blurred.delete();
+
+                    } else if (mode === '100mp') {
+                        // 100MP 放大 (約一億畫素)
+                        let targetPixels = 100000000;
+                        let ratio = Math.sqrt(targetPixels / (src.cols * src.rows));
+                        let width = Math.round(src.cols * ratio);
+                        let height = Math.round(src.rows * ratio);
+                        
+                        cv.resize(src, dst, new cv.Size(width, height), 0, 0, cv.INTER_CUBIC);
+                        
+                        let filtered = new cv.Mat();
+                        cv.bilateralFilter(dst, filtered, 5, 75, 75);
+                        
+                        let blurred = new cv.Mat();
+                        cv.GaussianBlur(filtered, blurred, new cv.Size(0, 0), 3);
+                        cv.addWeighted(filtered, 1.6, blurred, -0.6, 0, dst);
+                        
+                        // 轉換為 HSV 提升飽和度
+                        let hsv = new cv.Mat();
+                        cv.cvtColor(dst, hsv, cv.COLOR_RGB2HSV);
+                        let channels = new cv.MatVector();
+                        cv.split(hsv, channels);
+                        let s = channels.get(1);
+                        s.convertTo(s, -1, 1.2, 0); // Saturation +20%
+                        channels.set(1, s);
+                        cv.merge(channels, hsv);
+                        cv.cvtColor(hsv, dst, cv.COLOR_HSV2RGB);
+                        
+                        filtered.delete(); blurred.delete(); hsv.delete(); channels.delete(); s.delete();
+                    }
+
+                    // 輸出到 Canvas
+                    document.getElementById('imageSrc').classList.add('hidden');
+                    const canvas = document.getElementById('canvasOutput');
+                    canvas.classList.remove('hidden');
+                    cv.imshow('canvasOutput', dst);
+                    
+                    document.getElementById('btn-download').disabled = false;
+                    currentMode = mode;
+                    
+                    src.delete(); dst.delete();
+                } catch (e) {
+                    console.error(e);
+                    alert("處理失敗！可能是圖片過大導致瀏覽器記憶體不足。\n建議先縮小圖片或使用電腦版瀏覽器進行 100MP 運算。");
+                } finally {
+                    document.getElementById('processing-overlay').classList.add('hidden');
+                    document.getElementById('processing-overlay').classList.remove('flex');
+                }
+            }, 100); // 100ms 延遲
+        }
+
+        function downloadImage() {
+            const canvas = document.getElementById('canvasOutput');
+            const link = document.createElement('a');
+            const dateStr = new Date().toISOString().slice(0,10).replace(/-/g, '');
+            link.download = `NOVA_Enhanced_${currentMode}_${dateStr}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // 伺服器環境 (GitHub Pages) 專用的 WebAssembly 啟動監聽器
+        var Module = {
+            onRuntimeInitialized: function() {
+                cvReady = true;
+                const statusEl = document.getElementById('cv-status');
+                if(statusEl) {
+                    statusEl.innerText = "✅ 引擎已就緒 (v4.5.0 WASM)";
+                    statusEl.className = "text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded border border-emerald-500/50";
+                }
+                
+                // 防呆機制：如果圖片已經選好了，直接解鎖按鈕
+                const img = document.getElementById('imageSrc');
+                if (img && !img.classList.contains('hidden') && img.src !== "") {
+                    document.getElementById('btn-2x').disabled = false;
+                    document.getElementById('btn-100mp').disabled = false;
+                }
+            }
+        };
+    </script>
+    
+    <script async src="https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.5.0/opencv.js" type="text/javascript"></script>
+</body>
+</html>
